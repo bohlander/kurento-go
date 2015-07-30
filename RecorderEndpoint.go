@@ -20,7 +20,7 @@ func (elem *RecorderEndpoint) getConstructorParams(from IMediaObject, options ma
 		"mediaPipeline":     fmt.Sprintf("%s", from),
 		"uri":               "",
 		"mediaProfile":      fmt.Sprintf("%s", from),
-		"stopOnEndOfStream": fmt.Sprintf("%s", from),
+		"stopOnEndOfStream": false,
 	}
 
 	// then merge options
@@ -34,15 +34,23 @@ func (elem *RecorderEndpoint) getConstructorParams(from IMediaObject, options ma
 func (elem *RecorderEndpoint) Record() error {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "record",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }

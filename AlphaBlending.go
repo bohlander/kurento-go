@@ -38,17 +38,25 @@ func (elem *AlphaBlending) SetMaster(source HubPort, zOrder int) error {
 	setIfNotEmpty(params, "source", source)
 	setIfNotEmpty(params, "zOrder", zOrder)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "setMaster",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -65,16 +73,24 @@ func (elem *AlphaBlending) SetPortProperties(relativeX float64, relativeY float6
 	setIfNotEmpty(params, "relativeHeight", relativeHeight)
 	setIfNotEmpty(params, "port", port)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "setPortProperties",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }

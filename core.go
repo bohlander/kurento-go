@@ -27,6 +27,13 @@ type MediaObject struct {
 	// is not used internally for indexing nor idenfiying the objects. By default is
 	// the object type followed by the object id.
 	Name string
+
+	// This property allows activate/deactivate sending the element tags in all its
+	// events.
+	SendTagsInEvents bool
+
+	// Number of seconds since Epoch when the element was created
+	CreationTime int
 }
 
 // Return contructor params to be called by "Create".
@@ -35,7 +42,129 @@ func (elem *MediaObject) getConstructorParams(from IMediaObject, options map[str
 
 }
 
+// Request a SessionSpec offer.
+// This can be used to initiate a connection.
+func (elem *MediaObject) AddTag(key string, value string) error {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "key", key)
+	setIfNotEmpty(params, "value", value)
+
+	reqparams := map[string]interface{}{
+		"operation":       "addTag",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// Returns error or nil
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
+
+}
+
+// Remove the tag (key and value) associated to a tag
+func (elem *MediaObject) RemoveTag(key string) error {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "key", key)
+
+	reqparams := map[string]interface{}{
+		"operation":       "removeTag",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// Returns error or nil
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
+
+}
+
+// Returns the value associated to the given key.
+// Returns:
+// // The value associated to the given key.
+func (elem *MediaObject) GetTag(key string) (string, error) {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "key", key)
+
+	reqparams := map[string]interface{}{
+		"operation":       "getTag",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // The value associated to the given key.
+
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
+	return response.Result["value"], response.Error
+
+}
+
+// Returns all the MediaObject tags.
+// Returns:
+// // An array containing all pairs key-value associated to the MediaObject.
+func (elem *MediaObject) GetTags() ([]Tag, error) {
+	req := elem.getInvokeRequest()
+
+	reqparams := map[string]interface{}{
+		"operation": "getTags",
+		"object":    elem.Id,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // An array containing all pairs key-value associated to the MediaObject.
+
+	ret := []Tag{}
+	return ret, response.Error
+
+}
+
 type IServerManager interface {
+	GetKmd(moduleName string) (string, error)
 }
 
 // This is a standalone object for managing the MediaServer
@@ -50,11 +179,48 @@ type ServerManager struct {
 
 	// All active sessions in the server
 	Sessions []string
+
+	// Metadata stored in the server
+	Metadata string
 }
 
 // Return contructor params to be called by "Create".
 func (elem *ServerManager) getConstructorParams(from IMediaObject, options map[string]interface{}) map[string]interface{} {
 	return options
+
+}
+
+// Returns the kmd associated to a module
+// Returns:
+// // The kmd file
+func (elem *ServerManager) GetKmd(moduleName string) (string, error) {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "moduleName", moduleName)
+
+	reqparams := map[string]interface{}{
+		"operation":       "getKmd",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // The kmd file
+
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
+	return response.Result["value"], response.Error
 
 }
 
@@ -194,16 +360,24 @@ func (elem *UriEndpoint) getConstructorParams(from IMediaObject, options map[str
 func (elem *UriEndpoint) Pause() error {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "pause",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -211,20 +385,29 @@ func (elem *UriEndpoint) Pause() error {
 func (elem *UriEndpoint) Stop() error {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "stop",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
 type IMediaPipeline interface {
+	GetGstreamerDot(details GstreamerDotDetails) (string, error)
 }
 
 // A pipeline is a container for a collection of `MediaElements<MediaElement>` and
@@ -237,6 +420,41 @@ type MediaPipeline struct {
 // Return contructor params to be called by "Create".
 func (elem *MediaPipeline) getConstructorParams(from IMediaObject, options map[string]interface{}) map[string]interface{} {
 	return options
+
+}
+
+// Returns a string in dot (graphviz) format that represents the gstreamer
+// elements inside the pipeline
+// Returns:
+// // The dot graph
+func (elem *MediaPipeline) GetGstreamerDot(details GstreamerDotDetails) (string, error) {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "details", details)
+
+	reqparams := map[string]interface{}{
+		"operation":       "getGstreamerDot",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // The dot graph
+
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
+	return response.Result["value"], response.Error
 
 }
 
@@ -274,16 +492,25 @@ func (elem *SdpEndpoint) getConstructorParams(from IMediaObject, options map[str
 func (elem *SdpEndpoint) GenerateOffer() (string, error) {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "generateOffer",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// // The SDP offer.
 
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
 	return response.Result["value"], response.Error
 
 }
@@ -299,17 +526,26 @@ func (elem *SdpEndpoint) ProcessOffer(offer string) (string, error) {
 
 	setIfNotEmpty(params, "offer", offer)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "processOffer",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// // The chosen configuration from the ones stated in the SDP offer
 
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
 	return response.Result["value"], response.Error
 
 }
@@ -325,17 +561,26 @@ func (elem *SdpEndpoint) ProcessAnswer(answer string) (string, error) {
 
 	setIfNotEmpty(params, "answer", answer)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "processAnswer",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// // Updated SDP offer, based on the answer received.
 
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
 	return response.Result["value"], response.Error
 
 }
@@ -350,16 +595,25 @@ func (elem *SdpEndpoint) ProcessAnswer(answer string) (string, error) {
 func (elem *SdpEndpoint) GetLocalSessionDescriptor() (string, error) {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "getLocalSessionDescriptor",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// // The last agreed SessionSpec
 
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
 	return response.Result["value"], response.Error
 
 }
@@ -372,26 +626,42 @@ func (elem *SdpEndpoint) GetLocalSessionDescriptor() (string, error) {
 func (elem *SdpEndpoint) GetRemoteSessionDescriptor() (string, error) {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "getRemoteSessionDescriptor",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// // The last agreed User Agent session description
 
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
 	return response.Result["value"], response.Error
 
 }
 
 type IBaseRtpEndpoint interface {
+	GetStats(mediaType MediaType) (map[string]Stats, error)
 }
 
 // Base class to manage common RTP features.
 type BaseRtpEndpoint struct {
 	SdpEndpoint
+
+	// Minimum video bandwidth for receiving.
+	// Unit: kbps(kilobits per second).
+	// 0: unlimited.
+	// Default value: 100
+	MinVideoRecvBandwidth int
 
 	// Minimum video bandwidth for sending.
 	// Unit: kbps(kilobits per second).
@@ -404,11 +674,54 @@ type BaseRtpEndpoint struct {
 	// 0: unlimited.
 	// Default value: 500
 	MaxVideoSendBandwidth int
+
+	// State of the media
+	MediaState *MediaState
+
+	// State of the connection
+	ConnectionState *ConnectionState
+
+	// Parameters of the congestion control algorithm
+	RembParams *RembParams
 }
 
 // Return contructor params to be called by "Create".
 func (elem *BaseRtpEndpoint) getConstructorParams(from IMediaObject, options map[string]interface{}) map[string]interface{} {
 	return options
+
+}
+
+// Provides statistics collected for this endpoint
+// Returns:
+// // Delivers a successful result in the form of a RTC stats report. A RTC stats
+// // report represents a map between strings, identifying the inspected objects
+// // (RTCStats.id), and their corresponding RTCStats objects.
+func (elem *BaseRtpEndpoint) GetStats(mediaType MediaType) (map[string]Stats, error) {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "mediaType", mediaType)
+
+	reqparams := map[string]interface{}{
+		"operation":       "getStats",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // Delivers a successful result in the form of a RTC stats report. A RTC stats
+	// // report represents a map between strings, identifying the inspected objects
+	// // (RTCStats.id), and their corresponding RTCStats objects.
+
+	ret := map[string]Stats{}
+	return ret, response.Error
 
 }
 
@@ -419,6 +732,8 @@ type IMediaElement interface {
 	Disconnect(sink IMediaElement, mediaType MediaType, sourceMediaDescription string, sinkMediaDescription string) error
 	SetAudioFormat(caps AudioCaps) error
 	SetVideoFormat(caps VideoCaps) error
+	GetGstreamerDot(details GstreamerDotDetails) (string, error)
+	SetOutputBitrate(bitrate int) error
 }
 
 // Basic building blocks of the media server, that can be interconnected through
@@ -452,11 +767,15 @@ func (elem *MediaElement) GetSourceConnections(mediaType MediaType, description 
 	setIfNotEmpty(params, "mediaType", mediaType)
 	setIfNotEmpty(params, "description", description)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "getSourceConnections",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
@@ -483,11 +802,15 @@ func (elem *MediaElement) GetSinkConnections(mediaType MediaType, description st
 	setIfNotEmpty(params, "mediaType", mediaType)
 	setIfNotEmpty(params, "description", description)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "getSinkConnections",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
@@ -514,17 +837,25 @@ func (elem *MediaElement) Connect(sink IMediaElement, mediaType MediaType, sourc
 	setIfNotEmpty(params, "sourceMediaDescription", sourceMediaDescription)
 	setIfNotEmpty(params, "sinkMediaDescription", sinkMediaDescription)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "connect",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -541,17 +872,25 @@ func (elem *MediaElement) Disconnect(sink IMediaElement, mediaType MediaType, so
 	setIfNotEmpty(params, "sourceMediaDescription", sourceMediaDescription)
 	setIfNotEmpty(params, "sinkMediaDescription", sinkMediaDescription)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "disconnect",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -564,17 +903,25 @@ func (elem *MediaElement) SetAudioFormat(caps AudioCaps) error {
 
 	setIfNotEmpty(params, "caps", caps)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "setAudioFormat",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -587,16 +934,91 @@ func (elem *MediaElement) SetVideoFormat(caps VideoCaps) error {
 
 	setIfNotEmpty(params, "caps", caps)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "setVideoFormat",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
+
+}
+
+// Returns a string in dot (graphviz) format that represents the gstreamer
+// elements inside
+// Returns:
+// // The dot graph
+func (elem *MediaElement) GetGstreamerDot(details GstreamerDotDetails) (string, error) {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "details", details)
+
+	reqparams := map[string]interface{}{
+		"operation":       "getGstreamerDot",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// // The dot graph
+
+	if response.Error == nil {
+		return response.Result["value"], nil
+	} else {
+		return response.Result["value"], response.Error
+	}
+	return response.Result["value"], response.Error
+
+}
+
+// Allows change the target bitrate for the media output, if the media is encoded
+// using VP8 or H264. This method only works if it is called before the media
+// starts to flow.
+func (elem *MediaElement) SetOutputBitrate(bitrate int) error {
+	req := elem.getInvokeRequest()
+
+	params := make(map[string]interface{})
+
+	setIfNotEmpty(params, "bitrate", bitrate)
+
+	reqparams := map[string]interface{}{
+		"operation":       "setOutputBitrate",
+		"object":          elem.Id,
+		"operationParams": params,
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
+	// Call server and wait response
+	response := <-elem.connection.Request(req)
+
+	// Returns error or nil
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }

@@ -21,7 +21,7 @@ func (elem *PlayerEndpoint) getConstructorParams(from IMediaObject, options map[
 	ret := map[string]interface{}{
 		"mediaPipeline":   fmt.Sprintf("%s", from),
 		"uri":             "",
-		"useEncodedMedia": fmt.Sprintf("%s", from),
+		"useEncodedMedia": false,
 	}
 
 	// then merge options
@@ -35,15 +35,23 @@ func (elem *PlayerEndpoint) getConstructorParams(from IMediaObject, options map[
 func (elem *PlayerEndpoint) Play() error {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "play",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }

@@ -5,9 +5,11 @@ import (
 	"log"
 	"reflect"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
-var debug = false
+var debug = true
 
 // Debug activate debug information.
 func Debug(state bool) {
@@ -41,10 +43,17 @@ func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) 
 	req := elem.getCreateRequest()
 	constparams := m.getConstructorParams(elem, options)
 	// TODO params["sessionId"]
-	req["params"] = map[string]interface{}{
+
+	reqparams := map[string]interface{}{
 		"type":              getMediaElementType(m),
 		"constructorParams": constparams,
 	}
+
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+
 	if debug {
 		log.Printf("request to be sent: %+v\n", req)
 	}
@@ -62,6 +71,31 @@ func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) 
 		//m.setParent(elem)
 		m.setId(res.Result["value"])
 	}
+}
+
+type eventHandler func(map[string]interface{})
+
+func (elem *MediaObject) Subscribe(event string, cb eventHandler) float64 {
+	// tell the connection about this registered event for this mediaId event combo
+	handlerId := elem.connection.Subscribe(event, cb)
+
+	// Make API call to register
+	req := elem.getSubscribeRequest()
+	reqparams := map[string]interface{}{
+		"type":   event,
+		"object": elem.String(),
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+	res := <-elem.connection.Request(req)
+	if debug {
+		log.Println("Subscribe response ", res)
+	}
+
+	// pass back the token so can be unregistered
+	return handlerId
 }
 
 // Implement setConnection that allows element to handle connection
@@ -103,6 +137,13 @@ func (m *MediaObject) getInvokeRequest() map[string]interface{} {
 	return req
 }
 
+func (m *MediaObject) getSubscribeRequest() map[string]interface{} {
+	req := m.getCreateRequest()
+	req["method"] = "subscribe"
+
+	return req
+}
+
 // String implements fmt.Stringer interface, return ID
 func (m *MediaObject) String() string {
 	return m.Id
@@ -119,6 +160,14 @@ func mergeOptions(a, b map[string]interface{}) {
 	for key, val := range b {
 		a[key] = val
 	}
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	r, n := utf8.DecodeRuneInString(s)
+	return string(unicode.ToLower(r)) + s[n:]
 }
 
 func setIfNotEmpty(param map[string]interface{}, name string, t interface{}) {
@@ -143,5 +192,26 @@ func setIfNotEmpty(param map[string]interface{}, name string, t interface{}) {
 				param[name] = val
 			}
 		}
+	case ICustomSerializer:
+		param[name] = v.CustomSerialize()
+		/*default:
+		innerParam := make(map[string]interface{})
+		val := reflect.ValueOf(v)
+		log.Printf("type %v", val)
+		// TODO: look this stuff up somehow? Expose as interface as they do above? Tricky
+		innerParam["__module__"] = "kurento"
+		innerParam["__type__"] = "IceCandidate"
+
+		for i := 0; i < val.NumField(); i++ {
+			fieldName := lowerFirst(val.Type().Field(i).Name)
+			//log.Printf("setIfNotEmpty %s %v %v", fieldName, val.Field(i).Interface(), val.Field(i).Type().Name())
+			setIfNotEmpty(innerParam, fieldName, val.Field(i).Interface())
+		}
+		param[name] = innerParam
+		log.Printf("Setting %s to %v", name, innerParam)*/
 	}
+}
+
+type ICustomSerializer interface {
+	CustomSerialize() map[string]interface{}
 }

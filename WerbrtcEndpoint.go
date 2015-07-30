@@ -17,6 +17,12 @@ type WebRtcEndpoint struct {
 
 	// Port of the STUN server
 	StunServerPort int
+
+	// TURN server URL with this format:
+	// 'user:password@address:port(?transport=[udp|tcp|tls])'.
+	// 'address' must be an IP (not a domain).
+	// 'transport' is optional (UDP by default).
+	TurnUrl string
 }
 
 // Return contructor params to be called by "Create".
@@ -24,7 +30,8 @@ func (elem *WebRtcEndpoint) getConstructorParams(from IMediaObject, options map[
 
 	// Create basic constructor params
 	ret := map[string]interface{}{
-		"mediaPipeline": fmt.Sprintf("%s", from),
+		"mediaPipeline":   fmt.Sprintf("%s", from),
+		"useDataChannels": false,
 	}
 
 	// then merge options
@@ -39,16 +46,24 @@ func (elem *WebRtcEndpoint) getConstructorParams(from IMediaObject, options map[
 func (elem *WebRtcEndpoint) GatherCandidates() error {
 	req := elem.getInvokeRequest()
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation": "gatherCandidates",
 		"object":    elem.Id,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
 
@@ -60,16 +75,24 @@ func (elem *WebRtcEndpoint) AddIceCandidate(candidate IceCandidate) error {
 
 	setIfNotEmpty(params, "candidate", candidate)
 
-	req["params"] = map[string]interface{}{
+	reqparams := map[string]interface{}{
 		"operation":       "addIceCandidate",
 		"object":          elem.Id,
 		"operationParams": params,
 	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
 
 	// Call server and wait response
 	response := <-elem.connection.Request(req)
 
 	// Returns error or nil
-	return response.Error
+	if response.Error != nil {
+		return response.Error
+	} else {
+		return nil
+	}
 
 }
