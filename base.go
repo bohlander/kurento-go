@@ -73,11 +73,25 @@ func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) 
 	}
 }
 
+func (elem *MediaObject) Release() {
+	// Make API call to register
+	req := elem.getReleaseRequest()
+	reqparams := map[string]interface{}{
+		"object": elem.String(),
+	}
+	if elem.connection.SessionId != "" {
+		reqparams["sessionId"] = elem.connection.SessionId
+	}
+	req["params"] = reqparams
+	res := <-elem.connection.Request(req)
+	if debug {
+		log.Println("Release response ", res)
+	}
+}
+
 type eventHandler func(map[string]interface{})
 
-func (elem *MediaObject) Subscribe(event string, cb eventHandler) float64 {
-	// tell the connection about this registered event for this mediaId event combo
-	handlerId := elem.connection.Subscribe(event, cb)
+func (elem *MediaObject) Subscribe(event string, cb eventHandler) string {
 
 	// Make API call to register
 	req := elem.getSubscribeRequest()
@@ -90,9 +104,14 @@ func (elem *MediaObject) Subscribe(event string, cb eventHandler) float64 {
 	}
 	req["params"] = reqparams
 	res := <-elem.connection.Request(req)
+
+	handlerId := res.Result["Value"]
 	if debug {
-		log.Println("Subscribe response ", res)
+		log.Println("Subscribe response handlerId ", handlerId)
 	}
+
+	// tell the connection about this registered event for this mediaId event combo
+	elem.connection.Subscribe(event, elem.String(), handlerId, cb)
 
 	// pass back the token so can be unregistered
 	return handlerId
@@ -133,6 +152,14 @@ func (m *MediaObject) getCreateRequest() map[string]interface{} {
 func (m *MediaObject) getInvokeRequest() map[string]interface{} {
 	req := m.getCreateRequest()
 	req["method"] = "invoke"
+
+	return req
+}
+
+// Build a prepared release request
+func (m *MediaObject) getReleaseRequest() map[string]interface{} {
+	req := m.getCreateRequest()
+	req["method"] = "release"
 
 	return req
 }
