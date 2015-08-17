@@ -15,6 +15,8 @@ type Error struct {
 	Data    string
 }
 
+const ConnectionLost = -1
+
 // Implements error built-in interface
 func (e *Error) Error() string {
 	return fmt.Sprintf("[%d] %s %s", e.Code, e.Message, e.Data)
@@ -43,6 +45,8 @@ type Connection struct {
 	ws        *websocket.Conn
 	SessionId string
 	events    map[string]map[string]map[string]eventHandler // eventName -> objectId -> handlerId -> handler.
+	Dead      chan bool
+	IsDead    bool
 }
 
 var connections = make(map[string]*Connection)
@@ -57,6 +61,8 @@ func NewConnection(host string) *Connection {
 
 	c.events = make(map[string]map[string]map[string]eventHandler)
 	c.clients = make(map[float64]chan Response)
+	c.Dead = make(chan bool, 1)
+
 	var err error
 	c.ws, err = websocket.Dial(host+"/kurento", "", "http://127.0.0.1")
 	if err != nil {
@@ -67,10 +73,10 @@ func NewConnection(host string) *Connection {
 	return c
 }
 
-func (c *Connection) Create(m IMediaObject, options map[string]interface{}) {
+func (c *Connection) Create(m IMediaObject, options map[string]interface{}) error {
 	elem := &MediaObject{}
 	elem.setConnection(c)
-	elem.Create(m, options)
+	return elem.Create(m, options)
 }
 
 func (c *Connection) handleResponse() {
@@ -78,9 +84,17 @@ func (c *Connection) handleResponse() {
 		r := Response{}
 		ev := Event{}
 		var message string
-		websocket.Message.Receive(c.ws, &message)
+		err := websocket.Message.Receive(c.ws, &message)
+		if err != nil {
+			log.Printf("Error receiving on websocket %s", err)
+			c.IsDead = true
+			c.Dead <- true
+			break
+		}
 
-		log.Printf("RAW %s", message)
+		if debug {
+			log.Printf("RAW %s", message)
+		}
 
 		// Decode into both possible types. One should be valid
 		json.Unmarshal([]byte(message), &r)
@@ -89,7 +103,6 @@ func (c *Connection) handleResponse() {
 		isResponse := r.Id > 0 && r.Result != nil
 		isEvent := ev.Method == "onEvent"
 
-		//websocket.JSON.Receive(c.ws, &r)
 		if isResponse {
 			if r.Result["sessionId"] != "" {
 				if debug {
@@ -128,14 +141,26 @@ func (c *Connection) handleResponse() {
 					}
 				}
 			}
-		} else {
+		} else if debug {
 			log.Println("Unsupported message from KMS: ", message)
 		}
-
 	}
 }
 
 func (c *Connection) Request(req map[string]interface{}) <-chan Response {
+	if c.IsDead {
+		errchan := make(chan Response, 1)
+		errresp := Response{
+			Id: req["id"].(float64),
+			Error: &Error{
+				Code:    ConnectionLost,
+				Message: "No connection to Kurento server",
+			},
+		}
+		errchan <- errresp
+		return errchan
+	}
+
 	c.clientId++
 	req["id"] = c.clientId
 	if c.SessionId != "" {
@@ -146,7 +171,26 @@ func (c *Connection) Request(req map[string]interface{}) <-chan Response {
 		j, _ := json.MarshalIndent(req, "", "    ")
 		log.Println("json", string(j))
 	}
-	websocket.JSON.Send(c.ws, req)
+	err := websocket.JSON.Send(c.ws, req)
+	if err != nil {
+		log.Printf("Error sending on websocket %s", err)
+		c.Dead <- true
+		c.IsDead = true
+
+		delete(c.clients, c.clientId)
+
+		errchan := make(chan Response, 1)
+		errresp := Response{
+			Id: req["id"].(float64),
+			Error: &Error{
+				Code:    ConnectionLost,
+				Message: "No connection to Kurento server",
+			},
+		}
+
+		errchan <- errresp
+		return errchan
+	}
 	return c.clients[c.clientId]
 }
 

@@ -24,7 +24,7 @@ type IMediaObject interface {
 
 	// Each media object should be able to create another object
 	// Those options are sent to getConstructorParams
-	Create(IMediaObject, map[string]interface{})
+	Create(IMediaObject, map[string]interface{}) error
 
 	// Set ID of the element
 	setId(string)
@@ -39,7 +39,7 @@ type IMediaObject interface {
 }
 
 // Create object "m" with given "options"
-func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) {
+func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) error {
 	req := elem.getCreateRequest()
 	constparams := m.getConstructorParams(elem, options)
 	// TODO params["sessionId"]
@@ -65,15 +65,20 @@ func (elem *MediaObject) Create(m IMediaObject, options map[string]interface{}) 
 	if debug {
 		log.Println("Oncreate response: ", res)
 	}
-
-	if res.Result["value"] != "" {
-		elem.addChild(m)
-		//m.setParent(elem)
-		m.setId(res.Result["value"])
+	if res.Error == nil {
+		if res.Result["value"] != "" {
+			elem.addChild(m)
+			//m.setParent(elem)
+			m.setId(res.Result["value"])
+		}
+	} else {
+		return res.Error
 	}
+
+	return nil
 }
 
-func (elem *MediaObject) Release() {
+func (elem *MediaObject) Release() error {
 	// Make API call to register
 	req := elem.getReleaseRequest()
 	reqparams := map[string]interface{}{
@@ -87,6 +92,12 @@ func (elem *MediaObject) Release() {
 	if debug {
 		log.Println("Release response ", res)
 	}
+
+	if res.Error != nil {
+		return res.Error
+	}
+
+	return nil
 }
 
 type eventHandler func(map[string]interface{})
